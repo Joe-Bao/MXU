@@ -95,6 +95,31 @@ pub fn resource_operation(
         .map_err(|_| "INFERENCE_DEVICE_BUSY".to_string())
 }
 
+/// Acquire the run permit and reset stale stop state under the same instances lock.
+/// Any stop request accepted after this boundary belongs to the new run.
+pub fn begin_task_run(
+    state: &MaaState,
+    instance_id: &str,
+) -> Result<tokio::sync::OwnedMutexGuard<()>, String> {
+    let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
+    let instance = instances.get_mut(instance_id).ok_or("Instance not found")?;
+    let operation = instance
+        .resource_operation
+        .clone()
+        .try_lock_owned()
+        .map_err(|_| "INFERENCE_DEVICE_BUSY".to_string())?;
+    if instance
+        .tasker
+        .as_ref()
+        .is_some_and(|tasker| tasker.running())
+    {
+        return Err("INFERENCE_DEVICE_BUSY".to_string());
+    }
+    instance.stop_in_progress = false;
+    instance.stop_started_at = None;
+    Ok(operation)
+}
+
 /// Call while holding resource_operation, before the first batch of a new run.
 /// Preserve the resource handle, custom registrations, sinks and controller binding.
 pub fn prepare_inference(
@@ -103,8 +128,11 @@ pub fn prepare_inference(
     device: &InferenceDevice,
 ) -> Result<(), String> {
     let (resource, paths) = {
-        let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
-        let instance = instances.get_mut(instance_id).ok_or("Instance not found")?;
+        let instances = state.instances.lock().map_err(|e| e.to_string())?;
+        let instance = instances.get(instance_id).ok_or("Instance not found")?;
+        if instance.stop_in_progress {
+            return Err("INFERENCE_DEVICE_CANCELLED".to_string());
+        }
         if instance
             .tasker
             .as_ref()
@@ -112,8 +140,6 @@ pub fn prepare_inference(
         {
             return Err("INFERENCE_DEVICE_BUSY".to_string());
         }
-        instance.stop_in_progress = false;
-        instance.stop_started_at = None;
         let resource = instance.resource.as_ref().ok_or("Resource not loaded")?;
         if instance.inference_device.as_ref() == Some(device) && resource.loaded() {
             return Ok(());

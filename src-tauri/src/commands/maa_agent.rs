@@ -533,7 +533,11 @@ pub async fn start_tasks_impl(
     info!("agent_configs: {:?}", agent_configs);
     info!("cwd: {}, tcp_compat_mode: {}", cwd, tcp_compat_mode);
 
-    let operation = super::inference::resource_operation(maa_state, &instance_id)?;
+    let operation = if reset_state {
+        super::inference::begin_task_run(maa_state, &instance_id)?
+    } else {
+        super::inference::resource_operation(maa_state, &instance_id)?
+    };
     let _operation = if reset_state {
         let device = match inference_device {
             Some(device) => device,
