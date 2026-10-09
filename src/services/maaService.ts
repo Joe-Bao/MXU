@@ -21,8 +21,22 @@ import { isTauri } from '@/utils/paths';
 import i18n from '@/i18n';
 import { apiDelete, apiGet, apiPost, apiPut, getApiBase } from '@/utils/backendApi';
 import * as wsService from '@/services/wsService';
+import type { InferenceDevice, InferenceDevices } from '@/types/inference';
 
 const log = loggers.maa;
+
+function localizeInferenceError(error: unknown): unknown {
+  const message = error instanceof Error ? error.message : String(error);
+  for (const [code, key] of [
+    ['INFERENCE_DEVICE_UNAVAILABLE', 'inference.unavailable'],
+    ['INFERENCE_DEVICE_BUSY', 'inference.busy'],
+    ['INFERENCE_DEVICE_RELOAD_FAILED', 'inference.reloadFailed'],
+    ['INFERENCE_DEVICE_CANCELLED', 'inference.cancelled'],
+  ]) {
+    if (message.includes(code)) return new Error(i18n.t(key));
+  }
+  return error;
+}
 
 function localizeControllerError(error: unknown): unknown {
   const message = error instanceof Error ? error.message : String(error);
@@ -207,6 +221,12 @@ export const maaService = {
     return devices;
   },
 
+  async getInferenceDevices(): Promise<InferenceDevices> {
+    return isTauri()
+      ? invoke<InferenceDevices>('maa_get_inference_devices')
+      : apiGet<InferenceDevices>('/maa/inference-devices');
+  },
+
   /**
    * 查找桌面窗口（Win32/macOS）
    * @param classRegex 窗口类名正则表达式（仅 Win32/Gamepad，可选）
@@ -361,23 +381,35 @@ export const maaService = {
    * @param paths 资源路径列表
    * @returns 资源加载请求 ID 列表，通过监听 maa-callback 事件获取完成状态
    */
-  async loadResource(instanceId: string, paths: string[]): Promise<number[]> {
+  async loadResource(
+    instanceId: string,
+    paths: string[],
+    inferenceDevice?: InferenceDevice,
+  ): Promise<number[]> {
     log.info('加载资源, 实例:', instanceId, ', 路径数:', paths.length);
     paths.forEach((path, i) => {
       log.debug(`  路径[${i}]: ${path}`);
     });
-    if (!isTauri()) {
-      const result = await apiPost<{ resIds: number[] }>(
-        `/maa/instances/${instanceId}/resource/load`,
-        { paths },
-      );
-      const resIds = result.resIds ?? [];
-      log.info('资源加载请求已发送 (HTTP), resIds:', resIds);
+    try {
+      if (!isTauri()) {
+        const result = await apiPost<{ resIds: number[] }>(
+          `/maa/instances/${instanceId}/resource/load`,
+          { paths, inference_device: inferenceDevice },
+        );
+        const resIds = result.resIds ?? [];
+        log.info('资源加载请求已发送 (HTTP), resIds:', resIds);
+        return resIds;
+      }
+      const resIds = await invoke<number[]>('maa_load_resource', {
+        instanceId,
+        paths,
+        inferenceDevice,
+      });
+      log.info('资源加载请求已发送, resIds:', resIds);
       return resIds;
+    } catch (error) {
+      throw localizeInferenceError(error);
     }
-    const resIds = await invoke<number[]>('maa_load_resource', { instanceId, paths });
-    log.info('资源加载请求已发送, resIds:', resIds);
-    return resIds;
   },
 
   /**
@@ -415,7 +447,9 @@ export const maaService = {
   async destroyResource(instanceId: string): Promise<void> {
     if (!isTauri()) return;
     log.info('销毁资源, 实例:', instanceId);
-    await invoke('maa_destroy_resource', { instanceId });
+    await invoke('maa_destroy_resource', { instanceId }).catch((error) => {
+      throw localizeInferenceError(error);
+    });
     log.info('销毁资源成功:', instanceId);
   },
 
@@ -445,7 +479,9 @@ export const maaService = {
       const result = await apiPost<{ taskIds: number[] }>(
         `/maa/instances/${instanceId}/tasks/run`,
         [{ entry, pipeline_override: pipelineOverride, selected_task_id: selectedTaskId }],
-      );
+      ).catch((error) => {
+        throw localizeInferenceError(error);
+      });
       const taskId = result.taskIds[0] ?? 0;
       log.info('任务已提交 (HTTP), taskId:', taskId);
       return taskId;
@@ -455,6 +491,8 @@ export const maaService = {
       entry,
       pipelineOverride,
       selectedTaskId: selectedTaskId ?? null,
+    }).catch((error) => {
+      throw localizeInferenceError(error);
     });
     log.info('任务已提交, taskId:', taskId);
     return taskId;
@@ -645,6 +683,7 @@ export const maaService = {
     piEnvs?: Record<string, string>,
     controllerInfo?: ControllerTelemetryInfo,
     logRedactSecrets?: string[],
+    inferenceDevice?: InferenceDevice,
   ): Promise<number[]> {
     log.info('启动任务, 实例:', instanceId, ', 任务数:', tasks.length, ', cwd:', cwd || '.');
     tasks.forEach((task, i) => {
@@ -664,33 +703,39 @@ export const maaService = {
         tcpCompatMode,
       );
     }
-    if (!isTauri()) {
-      const result = await apiPost<{ taskIds: number[] }>(
-        `/maa/instances/${instanceId}/tasks/start`,
-        {
-          tasks,
-          agent_configs: agentConfigs && agentConfigs.length > 0 ? agentConfigs : null,
-          cwd: cwd || null,
-          tcp_compat_mode: tcpCompatMode || false,
-          pi_envs: agentConfigs && agentConfigs.length > 0 && piEnvs ? piEnvs : null,
-          controller_info: controllerInfo ?? null,
-        },
-      );
-      log.info('任务已提交 (HTTP), taskIds:', result.taskIds);
-      return result.taskIds;
+    try {
+      if (!isTauri()) {
+        const result = await apiPost<{ taskIds: number[] }>(
+          `/maa/instances/${instanceId}/tasks/start`,
+          {
+            tasks,
+            agent_configs: agentConfigs && agentConfigs.length > 0 ? agentConfigs : null,
+            cwd: cwd || null,
+            tcp_compat_mode: tcpCompatMode || false,
+            pi_envs: agentConfigs && agentConfigs.length > 0 && piEnvs ? piEnvs : null,
+            controller_info: controllerInfo ?? null,
+            inference_device: inferenceDevice,
+          },
+        );
+        log.info('任务已提交 (HTTP), taskIds:', result.taskIds);
+        return result.taskIds;
+      }
+      const hasAgent = (agentConfigs?.length ?? 0) > 0;
+      const taskIds = await invoke<number[]>('maa_start_tasks', {
+        instanceId,
+        tasks,
+        agentConfigs: hasAgent ? agentConfigs : null,
+        cwd: cwd || '.',
+        tcpCompatMode: tcpCompatMode || false,
+        piEnvs: hasAgent && piEnvs ? piEnvs : null,
+        controllerInfo: controllerInfo ?? null,
+        inferenceDevice,
+      });
+      log.info('任务已提交, taskIds:', taskIds);
+      return taskIds;
+    } catch (error) {
+      throw localizeInferenceError(error);
     }
-    const hasAgent = (agentConfigs?.length ?? 0) > 0;
-    const taskIds = await invoke<number[]>('maa_start_tasks', {
-      instanceId,
-      tasks,
-      agentConfigs: hasAgent ? agentConfigs : null,
-      cwd: cwd || '.',
-      tcpCompatMode: tcpCompatMode || false,
-      piEnvs: hasAgent && piEnvs ? piEnvs : null,
-      controllerInfo: controllerInfo ?? null,
-    });
-    log.info('任务已提交, taskIds:', taskIds);
-    return taskIds;
   },
 
   /**

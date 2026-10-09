@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 use tauri::State;
 
 use maa_framework::controller::{AdbControllerBuilder, Controller};
-use maa_framework::resource::Resource;
 use maa_framework::tasker::Tasker;
 #[cfg(target_os = "macos")]
 use maa_framework::toolkit::MacOSPermission;
@@ -741,6 +740,8 @@ pub fn maa_create_instance(state: State<Arc<MaaState>>, instance_id: String) -> 
 pub fn destroy_instance_impl(state: &Arc<MaaState>, instance_id: &str) -> Result<(), String> {
     info!("destroy_instance_impl called, instance_id: {}", instance_id);
 
+    let _operation = super::inference::resource_operation(state, instance_id)?;
+
     let cleanup_config = {
         let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
         let old_config = instances
@@ -1172,18 +1173,34 @@ pub fn load_resource_impl(
     paths: &[String],
     on_event: Arc<dyn Fn(&str, &str) + Send + Sync + 'static>,
     app: Option<&tauri::AppHandle>,
+    inference_device: Option<super::inference::InferenceDevice>,
 ) -> Result<Vec<i64>, String> {
     info!(
         "load_resource_impl called, instance: {}, paths: {:?}",
         instance_id, paths
     );
 
+    let _operation = super::inference::resource_operation(state, instance_id)?;
+    let device = match inference_device {
+        Some(device) => device,
+        None => app
+            .map(super::inference::saved_device)
+            .transpose()?
+            .unwrap_or_default(),
+    };
     let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
     let instance = instances.get_mut(instance_id).ok_or("Instance not found")?;
+    if instance
+        .tasker
+        .as_ref()
+        .is_some_and(|tasker| tasker.running())
+    {
+        return Err("INFERENCE_DEVICE_BUSY".to_string());
+    }
 
     // 创建或获取资源
     if instance.resource.is_none() {
-        let res = Resource::new().map_err(|e| e.to_string())?;
+        let res = super::inference::create_resource(&device)?;
 
         // 注册回调
         let on_event_clone = on_event.clone();
@@ -1202,6 +1219,8 @@ pub fn load_resource_impl(
         }
 
         instance.resource = Some(res);
+        instance.inference_device = Some(device);
+        instance.resource_paths.clear();
     }
 
     let resource = instance.resource.as_ref().unwrap();
@@ -1213,6 +1232,7 @@ pub fn load_resource_impl(
             Ok(job) => {
                 info!("Posted resource bundle: {} -> id: {}", normalized, job.id);
                 res_ids.push(job.id);
+                instance.resource_paths.push(normalized);
             }
             Err(e) => {
                 warn!("Failed to post resource bundle {}: {}", normalized, e);
@@ -1231,6 +1251,7 @@ pub fn maa_load_resource(
     state: State<Arc<MaaState>>,
     instance_id: String,
     paths: Vec<String>,
+    inference_device: Option<super::inference::InferenceDevice>,
 ) -> Result<Vec<i64>, String> {
     let res_ids = load_resource_impl(
         &state,
@@ -1241,6 +1262,7 @@ pub fn maa_load_resource(
             move |msg, detail| emit_callback_event(&app, msg, detail)
         }),
         Some(&app),
+        inference_device,
     )?;
 
     super::utils::emit_state_changed(&app, &instance_id, "resource-loading");
@@ -1287,14 +1309,24 @@ pub fn maa_destroy_resource(
     state: State<Arc<MaaState>>,
     instance_id: String,
 ) -> Result<(), String> {
+    let _operation = super::inference::resource_operation(&state, &instance_id)?;
     let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
     let instance = instances
         .get_mut(&instance_id)
         .ok_or("Instance not found")?;
 
+    if instance
+        .tasker
+        .as_ref()
+        .is_some_and(|tasker| tasker.running())
+    {
+        return Err("INFERENCE_DEVICE_BUSY".to_string());
+    }
     // 销毁旧的资源
-    instance.resource = None;
     instance.tasker = None;
+    instance.resource = None;
+    instance.inference_device = None;
+    instance.resource_paths.clear();
 
     Ok(())
 }
@@ -1313,8 +1345,15 @@ pub fn run_task_impl(
     pipeline_override: &str,
     selected_task_id: Option<&str>,
 ) -> Result<i64, String> {
+    // Single-task calls append to the current run. Only a new batch started via
+    // start_tasks_impl applies a pending device change.
+    let _operation = super::inference::resource_operation(state, instance_id)?;
     let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
     let instance = instances.get_mut(instance_id).ok_or("Instance not found")?;
+
+    if instance.inference_device.is_none() {
+        return Err("INFERENCE_DEVICE_RELOAD_FAILED".to_string());
+    }
 
     let resource = instance.resource.as_ref().ok_or("Resource not loaded")?;
     let controller = instance
@@ -1459,10 +1498,14 @@ pub fn maa_get_task_status(
 pub fn stop_task_impl(state: &MaaState, instance_id: &str) -> Result<(), String> {
     let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
     let instance = instances.get_mut(instance_id).ok_or("Instance not found")?;
-    let tasker = instance.tasker.as_ref().ok_or("Tasker not created")?;
+    let Some(tasker) = instance.tasker.as_ref() else {
+        instance.stop_in_progress = true;
+        instance.stop_started_at = Some(Instant::now());
+        return Ok(());
+    };
 
     if instance.stop_in_progress {
-        if !tasker.running() {
+        if !tasker.running() && instance.resource_operation.try_lock().is_ok() {
             instance.stop_in_progress = false;
             instance.stop_started_at = None;
             return Ok(());

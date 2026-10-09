@@ -1109,7 +1109,11 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
           // 计算完整的资源路径（包括 controller.attach_resource_path）
           const resourcePaths = computeResourcePaths(resource, controller, basePath);
 
-          const resIds = await maaService.loadResource(targetId, resourcePaths);
+          const resIds = await maaService.loadResource(
+            targetId,
+            resourcePaths,
+            useAppStore.getState().inferenceDevice,
+          );
 
           // 注册 res_id 与资源名的映射
           const resDisplayName = resolveI18nText(resource.label, translations) || resource.name;
@@ -1244,6 +1248,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
             useAppStore.getState().globalOptionValues,
             projectInterface?.option ?? {},
           ),
+          useAppStore.getState().inferenceDevice,
         );
 
         startedTaskIds.forEach((maaTaskId, index) => {

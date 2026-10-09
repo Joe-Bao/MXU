@@ -1,4 +1,18 @@
 export default {
+  inference: {
+    title: '推論裝置',
+    device: '顯示卡 / 推論裝置',
+    auto: '自動（由 MaaFramework 選擇）',
+    hint: '用於所有執行個體的 OCR 與神經網路辨識。Windows 可指定 DirectML 顯示卡；其他平台可選擇自動或 CPU。各執行個體下次開始任務時自動套用，無需重新啟動，正在執行的任務不受影響。',
+    pending: '部分執行個體仍使用先前的裝置，下次開始任務時將自動重新載入模型。',
+    current: '{{instance}} 已載入：{{device}}',
+    notReady: '等待重新載入',
+    unavailable: '所選顯示卡無法使用。請選擇可用裝置後重新開始任務。',
+    busy: '執行個體正在執行、載入資源或啟動任務，請等待完成後再試。',
+    reloadFailed: '推論資源重新載入失敗，任務未啟動。請檢查資源路徑與日誌後重試。',
+    cancelled: '已取消任務啟動。',
+    loadFailed: '無法取得主機顯示卡清單，請重新開啟設定後再試。',
+  },
   // 通用
   common: {
     confirm: '確定',

@@ -524,6 +524,7 @@ pub async fn start_tasks_impl(
     pi_envs: Option<HashMap<String, String>>,
     reset_state: bool,
     controller_info: Option<ControllerInfo>,
+    inference_device: Option<super::inference::InferenceDevice>,
 ) -> Result<Vec<i64>, String> {
     info!("start_tasks_impl called");
 
@@ -531,6 +532,34 @@ pub async fn start_tasks_impl(
     info!("tasks: {:?}", tasks);
     info!("agent_configs: {:?}", agent_configs);
     info!("cwd: {}, tcp_compat_mode: {}", cwd, tcp_compat_mode);
+
+    let operation = super::inference::resource_operation(maa_state, &instance_id)?;
+    let _operation = if reset_state {
+        let device = match inference_device {
+            Some(device) => device,
+            None => super::inference::saved_device(&app)?,
+        };
+        let state = Arc::clone(maa_state);
+        let id = instance_id.clone();
+        // Loading and session destruction can take time; do not block the async
+        // executor or hold the global instances lock while FW invokes callbacks.
+        let operation = tauri::async_runtime::spawn_blocking(move || {
+            // Keep the permit in the worker even if the HTTP request is cancelled.
+            let operation = operation;
+            super::inference::prepare_inference(&state, &id, &device)?;
+            Ok::<_, String>(operation)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        emit_callback_event(
+            &app,
+            "Inference.Device.Applied",
+            &serde_json::json!({"instance_id": instance_id}).to_string(),
+        );
+        operation
+    } else {
+        operation
+    };
 
     let (resource, controller, tasker) = {
         debug!("[start_tasks] Acquiring instances lock...");
@@ -540,6 +569,10 @@ pub async fn start_tasks_impl(
             .get_mut(&instance_id)
             .ok_or("Instance not found")?;
         debug!("[start_tasks] Instance found: {}", instance_id);
+
+        if instance.inference_device.is_none() {
+            return Err("INFERENCE_DEVICE_RELOAD_FAILED".to_string());
+        }
 
         let res = instance
             .resource
@@ -728,6 +761,13 @@ pub async fn start_tasks_impl(
             .ok_or("Instance not found")?;
         if reset_state {
             // 首批：重置任务运行状态
+            if instance.stop_in_progress {
+                drop(instances);
+                drop(telemetry_posting);
+                super::telemetry::on_run_cancelled(&instance_id);
+                stop_agent_impl(maa_state, &instance_id)?;
+                return Err("INFERENCE_DEVICE_CANCELLED".to_string());
+            }
             instance.task_ids.clear();
             let state = &mut instance.task_run_state;
             state.statuses.clear();
@@ -816,6 +856,7 @@ pub async fn maa_start_tasks(
     pi_envs: Option<HashMap<String, String>>,
     reset_state: Option<bool>,
     controller_info: Option<ControllerInfo>,
+    inference_device: Option<super::inference::InferenceDevice>,
 ) -> Result<Vec<i64>, String> {
     start_tasks_impl(
         app,
@@ -828,6 +869,7 @@ pub async fn maa_start_tasks(
         pi_envs,
         reset_state.unwrap_or(true),
         controller_info,
+        inference_device,
     )
     .await
 }

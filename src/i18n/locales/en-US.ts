@@ -1,4 +1,21 @@
 export default {
+  inference: {
+    title: 'Inference Device',
+    device: 'GPU / inference device',
+    auto: 'Automatic (selected by MaaFramework)',
+    hint: 'Used for OCR and neural network recognition in all instances. Windows supports choosing a DirectML GPU; other platforms support Automatic or CPU. Each instance applies changes on its next run, without restarting MXU or interrupting running tasks.',
+    pending:
+      'Some instances still use the previous device. Models will reload automatically on their next run.',
+    current: '{{instance}} loaded: {{device}}',
+    notReady: 'Waiting to reload',
+    unavailable:
+      'The selected GPU is unavailable. Choose an available device and start the tasks again.',
+    busy: 'This instance is running, loading resources or starting tasks. Wait for it to finish and try again.',
+    reloadFailed:
+      'Inference resources could not be reloaded. Tasks were not started. Check the resource paths and logs before trying again.',
+    cancelled: 'Task startup was cancelled.',
+    loadFailed: 'Could not load the host GPU list. Reopen settings to try again.',
+  },
   // Common
   common: {
     confirm: 'Confirm',

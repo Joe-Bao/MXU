@@ -31,7 +31,7 @@ pub fn maa_get_instance_state(
     // 通过 Maa API 查询真实状态
     let is_running = instance.tasker.as_ref().is_some_and(|t| t.running());
 
-    if !is_running && instance.stop_in_progress {
+    if !is_running && instance.stop_in_progress && instance.resource_operation.try_lock().is_ok() {
         instance.stop_in_progress = false;
         instance.stop_started_at = None;
     }
@@ -71,7 +71,10 @@ pub fn maa_get_all_states(state: State<Arc<MaaState>>) -> Result<AllInstanceStat
         // 通过 Maa API 查询真实状态
         let is_running = instance.tasker.as_ref().is_some_and(|t| t.running());
 
-        if !is_running && instance.stop_in_progress {
+        if !is_running
+            && instance.stop_in_progress
+            && instance.resource_operation.try_lock().is_ok()
+        {
             instance.stop_in_progress = false;
             instance.stop_started_at = None;
         }

@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::process::Child;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -231,6 +231,12 @@ pub struct AllInstanceStates {
 #[derive(Default)]
 pub struct InstanceRuntime {
     pub resource: Option<Resource>,
+    /// Selection actually applied to this resource, independent of the saved preference.
+    pub inference_device: Option<super::inference::InferenceDevice>,
+    /// Bundle order matters: later bundles override earlier ones.
+    pub resource_paths: Vec<String>,
+    /// Serialize resource changes and task submission without blocking other instances.
+    pub resource_operation: Arc<tokio::sync::Mutex<()>>,
     pub controller: Option<Controller>,
     /// 当前控制器的配置（用于 ControllerPool 引用管理）
     pub controller_config: Option<ControllerConfig>,

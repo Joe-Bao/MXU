@@ -237,6 +237,8 @@ export const useAppStore = create<AppState>()(
     maxLogsPerInstance: DEFAULT_MAX_LOGS_PER_INSTANCE,
     autoClearLogsOnLaunch: false,
     helpImproveSoftware: true,
+    inferenceDevice: { type: 'auto' },
+    setInferenceDevice: (inferenceDevice) => set({ inferenceDevice }),
     customAccents: [],
     setTheme: (theme) => {
       set({ theme });
@@ -1470,6 +1472,7 @@ export const useAppStore = create<AppState>()(
         confirmBeforeDelete: config.settings.confirmBeforeDelete ?? false,
         maxLogsPerInstance: config.settings.maxLogsPerInstance ?? DEFAULT_MAX_LOGS_PER_INSTANCE,
         autoClearLogsOnLaunch: config.settings.autoClearLogsOnLaunch ?? false,
+        inferenceDevice: config.settings.inferenceDevice ?? { type: 'auto' },
         // 默认开启；调试 / 开发版本强制关闭
         helpImproveSoftware: isTelemetryBlockedByBuild(get().projectInterface)
           ? false
@@ -2460,6 +2463,7 @@ function generateConfig(): MxuConfig {
           maxLogsPerInstance: state.maxLogsPerInstance,
           autoClearLogsOnLaunch: state.autoClearLogsOnLaunch,
           helpImproveSoftware: state.helpImproveSoftware,
+          inferenceDevice: state.inferenceDevice,
           windowSize: bl?.windowSize ?? state.windowSize,
           windowPosition: bl?.windowPosition ?? state.windowPosition,
           showOptionPreview: bl?.showOptionPreview ?? state.showOptionPreview,
@@ -2553,6 +2557,7 @@ useAppStore.subscribe(
     maxLogsPerInstance: state.maxLogsPerInstance,
     autoClearLogsOnLaunch: state.autoClearLogsOnLaunch,
     helpImproveSoftware: state.helpImproveSoftware,
+    inferenceDevice: state.inferenceDevice,
     mirrorChyanSettings: state.mirrorChyanSettings,
     proxySettings: state.proxySettings,
     welcomeShownHash: state.welcomeShownHash,

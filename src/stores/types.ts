@@ -117,6 +117,8 @@ export interface AppState {
   autoClearLogsOnLaunch: boolean;
   /** 是否开启匿名遥测（帮助改进软件），默认 true；调试 / 开发版本强制关闭 */
   helpImproveSoftware: boolean;
+  inferenceDevice: import('@/types/inference').InferenceDevice;
+  setInferenceDevice: (device: import('@/types/inference').InferenceDevice) => void;
   customAccents: CustomAccent[];
   setTheme: (theme: Theme) => void;
   setAccentColor: (accent: AccentColor) => void;

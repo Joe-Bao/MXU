@@ -1,4 +1,18 @@
 export default {
+  inference: {
+    title: '推理设备',
+    device: '显卡 / 推理设备',
+    auto: '自动（由 MaaFramework 选择）',
+    hint: '用于所有实例的 OCR 和神经网络识别。Windows 可指定 DirectML 显卡；其他平台可选择自动或 CPU。各实例下次开始任务时自动应用，无需重启，正在运行的任务不受影响。',
+    pending: '部分实例仍使用先前的设备，下次开始任务时将自动重新加载模型。',
+    current: '{{instance}} 已加载：{{device}}',
+    notReady: '等待重新加载',
+    unavailable: '所选显卡不可用。请选择可用设备后重新开始任务。',
+    busy: '实例正在运行、加载资源或启动任务，请等待完成后再试。',
+    reloadFailed: '推理资源重新加载失败，任务未启动。请检查资源路径和日志后重试。',
+    cancelled: '任务启动已取消。',
+    loadFailed: '无法获取主机显卡列表，请重新打开设置后重试。',
+  },
   // 通用
   common: {
     confirm: '确定',

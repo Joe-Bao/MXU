@@ -221,6 +221,7 @@ pub async fn start_web_server(
         .route("/maa/initialized", get(handle_get_maa_initialized))
         // Maa 设备扫描
         .route("/maa/devices", get(handle_get_adb_devices))
+        .route("/maa/inference-devices", get(handle_get_inference_devices))
         .route("/maa/windows", get(handle_get_win32_windows))
         .route("/maa/wlroots-sockets", get(handle_get_wlroots_sockets))
         .route(
@@ -728,6 +729,17 @@ async fn handle_get_adb_devices(State(state): State<WebState>) -> impl IntoRespo
     }
 }
 
+async fn handle_get_inference_devices(State(state): State<WebState>) -> impl IntoResponse {
+    match crate::commands::inference::get_inference_devices(&state.maa_state) {
+        Ok(devices) => Json(serde_json::to_value(devices).unwrap_or_default()).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 /// GET /api/maa/windows
 /// 扫描并返回 Win32 窗口列表（可选 class_regex / window_regex 过滤参数）
 async fn handle_get_win32_windows(
@@ -865,12 +877,30 @@ async fn handle_load_resource(
             emit_callback_event(&app_handle, msg, detail);
         });
 
+    let inference_device = match body
+        .get("inference_device")
+        .filter(|value| !value.is_null())
+    {
+        Some(value) => match serde_json::from_value(value.clone()) {
+            Ok(device) => Some(device),
+            Err(error) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": error.to_string() })),
+                )
+                    .into_response();
+            }
+        },
+        None => None,
+    };
+
     match load_resource_impl(
         &state.maa_state,
         &instance_id,
         &paths,
         on_event,
         Some(&state.app_handle),
+        inference_device,
     ) {
         Ok(res_ids) => {
             emit_state_changed(&state.app_handle, &instance_id, "resource-loading");
@@ -937,6 +967,8 @@ struct StartTasksRequest {
     /// 当前 controller 描述，仅用于遥测埋点
     #[serde(default)]
     controller_info: Option<ControllerInfo>,
+    #[serde(default)]
+    inference_device: Option<crate::commands::inference::InferenceDevice>,
 }
 
 /// POST /api/maa/instances/:id/tasks/start
@@ -973,6 +1005,7 @@ async fn handle_start_tasks(
         body.pi_envs,
         body.reset_state.unwrap_or(true),
         body.controller_info,
+        body.inference_device,
     )
     .await
     {

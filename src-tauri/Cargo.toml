@@ -82,6 +82,14 @@ winsafe = { version = "0.0.28", features = [
     "user"
 ] }
 windows = { version = "0.61.3", features = [
+    "Wdk_Graphics_Direct3D",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_Display",
+    "Win32_Devices_Properties",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",

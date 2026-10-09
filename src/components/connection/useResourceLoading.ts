@@ -46,7 +46,11 @@ export function useResourceLoading({
 
         // Phase 1: load resource.path
         const basePaths = computeBaseResourcePaths(resource, basePath);
-        const baseResIds = await maaService.loadResource(instanceId, basePaths);
+        const baseResIds = await maaService.loadResource(
+          instanceId,
+          basePaths,
+          useAppStore.getState().inferenceDevice,
+        );
 
         registerResBatch(baseResIds);
         baseResIds.forEach((resId) => {
@@ -94,7 +98,11 @@ export function useResourceLoading({
         // Phase 2: load controller.attach_resource_path
         const attachPaths = computeAttachResourcePaths(currentController, basePath);
         if (attachPaths.length > 0) {
-          const attachResIds = await maaService.loadResource(instanceId, attachPaths);
+          const attachResIds = await maaService.loadResource(
+            instanceId,
+            attachPaths,
+            useAppStore.getState().inferenceDevice,
+          );
           registerResBatch(attachResIds);
           attachResIds.forEach((resId) => {
             registerResIdName(resId, resourceDisplayName);

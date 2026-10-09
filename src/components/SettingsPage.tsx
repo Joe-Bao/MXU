@@ -13,6 +13,7 @@ import {
   LayoutGrid,
   ChevronRight,
   Globe,
+  Cpu,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -28,6 +29,7 @@ import {
   AppearanceSection,
   HotkeySection,
   GeneralSection,
+  InferenceSection,
   UpdateSection,
   DebugSection,
   AboutSection,
@@ -268,6 +270,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       items.push({ id: 'task-settings', icon: LayoutGrid, labelKey: 'settings.taskSettings' });
     }
     items.push({ id: 'general', icon: Settings2, labelKey: 'settings.general' });
+    items.push({ id: 'inference', icon: Cpu, labelKey: 'inference.title' });
     items.push({ id: 'hotkeys', icon: Keyboard, labelKey: 'settings.hotkeys' });
     items.push({ id: 'webserver', icon: Globe, labelKey: 'webserver.title' });
     if (projectInterface?.mirrorchyan_rid) {
@@ -489,6 +492,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
 
             {/* 通用设置 */}
             <GeneralSection />
+            <InferenceSection />
 
             {/* 快捷键设置 */}
             <HotkeySection />
